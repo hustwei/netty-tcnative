@@ -232,8 +232,8 @@ static const jint supported_ssl_opts = 0
 static int ssl_tmp_key_init_rsa(int bits, int idx)
 {
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(OPENSSL_USE_DEPRECATED)
-    if (!(SSL_temp_keys[idx] =
-          RSA_generate_key(bits, RSA_F4, NULL, NULL))) {
+    SSL_temp_keys[idx] = RSA_new();
+    if (RSA_generate_key_ex(SSL_temp_keys[idx], bits, RSA_F4, NULL)) {
 #ifdef OPENSSL_FIPS
         /**
          * With FIPS mode short RSA keys cannot be
@@ -246,6 +246,8 @@ static int ssl_tmp_key_init_rsa(int bits, int idx)
         return 1;
     }
     else {
+        RSA_free(SSL_temp_keys[idx]);
+        SSL_temp_keys[idx] = NULL;
         return 0;
     }
 #else
@@ -610,45 +612,6 @@ int SSL_rand_seed(const char *file)
     return RAND_status();
 }
 
-static int ssl_rand_make(const char *file, int len, int base64)
-{
-    int r;
-    int num = len;
-    BIO *out = NULL;
-
-    out = BIO_new(BIO_s_file());
-    if (out == NULL)
-        return 0;
-    if ((r = BIO_write_filename(out, (char *)file)) < 0) {
-        BIO_free_all(out);
-        return 0;
-    }
-    if (base64) {
-        BIO *b64 = BIO_new(BIO_f_base64());
-        if (b64 == NULL) {
-            BIO_free_all(out);
-            return 0;
-        }
-        out = BIO_push(b64, out);
-    }
-    while (num > 0) {
-        unsigned char buf[4096];
-        int len = num;
-        if (len > sizeof(buf))
-            len = sizeof(buf);
-        r = RAND_bytes(buf, len);
-        if (r <= 0) {
-            BIO_free_all(out);
-            return 0;
-        }
-        BIO_write(out, buf, len);
-        num -= len;
-    }
-    r = BIO_flush(out);
-    BIO_free_all(out);
-    return r > 0 ? 1 : 0;
-}
-
 TCN_IMPLEMENT_CALL(jint, SSL, initialize)(TCN_STDARGS, jstring engine)
 {
     int r = 0;
@@ -781,17 +744,6 @@ TCN_IMPLEMENT_CALL(jboolean, SSL, randSave)(TCN_STDARGS, jstring file)
     int r;
     UNREFERENCED(o);
     r = ssl_rand_save_file(J2S(file));
-    TCN_FREE_CSTRING(file);
-    return r ? JNI_TRUE : JNI_FALSE;
-}
-
-TCN_IMPLEMENT_CALL(jboolean, SSL, randMake)(TCN_STDARGS, jstring file,
-                                            jint length, jboolean base64)
-{
-    TCN_ALLOC_CSTRING(file);
-    int r;
-    UNREFERENCED(o);
-    r = ssl_rand_make(J2S(file), length, base64);
     TCN_FREE_CSTRING(file);
     return r ? JNI_TRUE : JNI_FALSE;
 }
