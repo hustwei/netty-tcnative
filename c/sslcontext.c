@@ -1464,7 +1464,11 @@ static const char* authentication_method(const SSL* ssl) {
         case SSL2_VERSION:
             return SSL_TXT_RSA;
         default:
+#if defined(OPENSSL_IS_BORINGSSL)
+            return cipher_authentication_method(SSL_get_pending_cipher(ssl));
+#else
             return cipher_authentication_method(ssl->s3->tmp.new_cipher);
+#endif
         }
     }
 }
